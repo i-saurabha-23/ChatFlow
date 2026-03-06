@@ -153,24 +153,30 @@ Requested at runtime in:
 
 ## Screenshots
 
-### Splash Screens
-![Splash Screen 1](screenshots/splash_screen_1.png)
-![Splash Screen 2](screenshots/splash_screen_2.png)
-![Splash Screen 3](screenshots/splash_screen_3.png)
+Maximum 4 screenshots per row, all with the same size.
 
-### Auth
-![Sign In](screenshots/sign_in.png)
-![Sign Up](screenshots/sign_up.png)
+### Row 1
+<p align="left">
+  <img src="screenshots/splash_screen_1.png" alt="Splash Screen 1" width="220" />
+  <img src="screenshots/splash_screen_2.png" alt="Splash Screen 2" width="220" />
+  <img src="screenshots/splash_screen_3.png" alt="Splash Screen 3" width="220" />
+  <img src="screenshots/sign_in.png" alt="Sign In" width="220" />
+</p>
 
-### Main Tabs
-![Chats](screenshots/chats.png)
-![Contacts](screenshots/contacts.png)
-![Settings](screenshots/settings.png)
-![Profile](screenshots/profile.png)
+### Row 2
+<p align="left">
+  <img src="screenshots/sign_up.png" alt="Sign Up" width="220" />
+  <img src="screenshots/chats.png" alt="Chats" width="220" />
+  <img src="screenshots/contacts.png" alt="Contacts" width="220" />
+  <img src="screenshots/settings.png" alt="Settings" width="220" />
+</p>
 
-### Chat Flow
-![Chat Thread](screenshots/chat_thread.png)
-![Create Group](screenshots/create_group.png)
+### Row 3
+<p align="left">
+  <img src="screenshots/profile.png" alt="Profile" width="220" />
+  <img src="screenshots/chat_thread.png" alt="Chat Thread" width="220" />
+  <img src="screenshots/create_group.png" alt="Create Group" width="220" />
+</p>
 
 ## Notes
 
