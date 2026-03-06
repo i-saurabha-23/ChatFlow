@@ -33,7 +33,7 @@ ChatFlow is a Flutter + NestJS messaging app with:
 |       |-- groups/
 |       |-- messages/
 |       `-- common/crypto/
-|-- screenshots/              # Add README screenshots here (you will create)
+|-- screenshots/              # App screenshots used in this README
 `-- README.md
 ```
 
@@ -153,32 +153,24 @@ Requested at runtime in:
 
 ## Screenshots
 
-Create a `screenshots/` folder in the project root and add your images with these names:
-
-- `screenshots/01-sign-in.png`
-- `screenshots/02-sign-up.png`
-- `screenshots/03-chats.png`
-- `screenshots/04-contacts.png`
-- `screenshots/05-settings.png`
-- `screenshots/06-profile.png`
-- `screenshots/07-chat-thread.png`
-- `screenshots/08-group-create.png`
-
-README preview blocks:
+### Splash Screens
+![Splash Screen 1](screenshots/splash_screen_1.png)
+![Splash Screen 2](screenshots/splash_screen_2.png)
+![Splash Screen 3](screenshots/splash_screen_3.png)
 
 ### Auth
-![Sign In](screenshots/01-sign-in.png)
-![Sign Up](screenshots/02-sign-up.png)
+![Sign In](screenshots/sign_in.png)
+![Sign Up](screenshots/sign_up.png)
 
 ### Main Tabs
-![Chats](screenshots/03-chats.png)
-![Contacts](screenshots/04-contacts.png)
-![Settings](screenshots/05-settings.png)
-![Profile](screenshots/06-profile.png)
+![Chats](screenshots/chats.png)
+![Contacts](screenshots/contacts.png)
+![Settings](screenshots/settings.png)
+![Profile](screenshots/profile.png)
 
 ### Chat Flow
-![Chat Thread](screenshots/07-chat-thread.png)
-![Create Group](screenshots/08-group-create.png)
+![Chat Thread](screenshots/chat_thread.png)
+![Create Group](screenshots/create_group.png)
 
 ## Notes
 
