@@ -153,30 +153,42 @@ Requested at runtime in:
 
 ## Screenshots
 
-Maximum 4 screenshots per row, all with the same size.
+All screenshots are grouped by section and shown in tables (max 4 per row, same size).
 
-### Row 1
-<p align="left">
-  <img src="screenshots/splash_screen_1.png" alt="Splash Screen 1" width="220" />
-  <img src="screenshots/splash_screen_2.png" alt="Splash Screen 2" width="220" />
-  <img src="screenshots/splash_screen_3.png" alt="Splash Screen 3" width="220" />
-  <img src="screenshots/sign_in.png" alt="Sign In" width="220" />
-</p>
+### Splash Screens
+<table>
+  <tr>
+    <td align="center"><img src="screenshots/splash_screen_1.png" alt="Splash Screen 1" width="220" /><br/>Splash 1</td>
+    <td align="center"><img src="screenshots/splash_screen_2.png" alt="Splash Screen 2" width="220" /><br/>Splash 2</td>
+    <td align="center"><img src="screenshots/splash_screen_3.png" alt="Splash Screen 3" width="220" /><br/>Splash 3</td>
+  </tr>
+</table>
 
-### Row 2
-<p align="left">
-  <img src="screenshots/sign_up.png" alt="Sign Up" width="220" />
-  <img src="screenshots/chats.png" alt="Chats" width="220" />
-  <img src="screenshots/contacts.png" alt="Contacts" width="220" />
-  <img src="screenshots/settings.png" alt="Settings" width="220" />
-</p>
+### Authentication Screens
+<table>
+  <tr>
+    <td align="center"><img src="screenshots/sign_in.png" alt="Sign In" width="220" /><br/>Sign In</td>
+    <td align="center"><img src="screenshots/sign_up.png" alt="Sign Up" width="220" /><br/>Sign Up</td>
+  </tr>
+</table>
 
-### Row 3
-<p align="left">
-  <img src="screenshots/profile.png" alt="Profile" width="220" />
-  <img src="screenshots/chat_thread.png" alt="Chat Thread" width="220" />
-  <img src="screenshots/create_group.png" alt="Create Group" width="220" />
-</p>
+### Main Tabs
+<table>
+  <tr>
+    <td align="center"><img src="screenshots/chats.png" alt="Chats" width="220" /><br/>Chats</td>
+    <td align="center"><img src="screenshots/contacts.png" alt="Contacts" width="220" /><br/>Contacts</td>
+    <td align="center"><img src="screenshots/settings.png" alt="Settings" width="220" /><br/>Settings</td>
+    <td align="center"><img src="screenshots/profile.png" alt="Profile" width="220" /><br/>Profile</td>
+  </tr>
+</table>
+
+### Chat Screens
+<table>
+  <tr>
+    <td align="center"><img src="screenshots/chat_thread.png" alt="Chat Thread" width="220" /><br/>Chat Thread</td>
+    <td align="center"><img src="screenshots/create_group.png" alt="Create Group" width="220" /><br/>Create Group</td>
+  </tr>
+</table>
 
 ## Notes
 
