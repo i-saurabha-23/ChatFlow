@@ -71,3 +71,6 @@ backend/.env.*
 # OS/editor extras
 Thumbs.db
 .vscode/
+
+# Local docs
+PROJECT_HANDBOOK.md
