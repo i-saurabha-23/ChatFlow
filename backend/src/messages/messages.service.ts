@@ -1,4 +1,4 @@
-import {
+﻿import {
   BadRequestException,
   Injectable,
   NotFoundException,
@@ -7,9 +7,14 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { CryptoService } from '../common/crypto/crypto.service';
 import { Group, GroupDocument } from '../groups/group.schema';
+import { NotificationsService } from '../notifications/notifications.service';
 import { User, UserDocument } from '../users/user.schema';
 import { CreateDirectMessageDto } from './create-direct-message.dto';
 import { CreateGroupMessageDto } from './create-group-message.dto';
+import {
+  MessagesGateway,
+  RealtimeChatMessageEvent,
+} from './messages.gateway';
 import { Message, MessageDocument } from './message.schema';
 
 @Injectable()
@@ -19,6 +24,8 @@ export class MessagesService {
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
     @InjectModel(Group.name) private readonly groupModel: Model<GroupDocument>,
     private readonly cryptoService: CryptoService,
+    private readonly messagesGateway: MessagesGateway,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async createDirectMessage(createDirectMessageDto: CreateDirectMessageDto) {
@@ -42,14 +49,53 @@ export class MessagesService {
       authTag: encrypted.authTag,
     });
 
-    return {
+    const createdAt: Date = (createdMessage as any).createdAt ?? new Date();
+    const senderId = sender.id;
+    const receiverId = receiver.id;
+
+    const response = {
       id: createdMessage.id,
       messageType: createdMessage.messageType,
       senderId: createdMessage.senderId,
       receiverUserId: createdMessage.receiverUserId,
       content: createDirectMessageDto.content,
-      createdAt: createdMessage.createdAt,
+      createdAt,
     };
+
+    const realtimePayload: RealtimeChatMessageEvent = {
+      id: createdMessage.id,
+      messageType: 'direct',
+      senderId,
+      senderName: sender.fullName,
+      receiverUserId: receiverId,
+      receiverName: receiver.fullName,
+      content: createDirectMessageDto.content,
+      createdAt,
+    };
+
+    this.messagesGateway.broadcastMessageToUsers(
+      [senderId, receiverId],
+      realtimePayload,
+    );
+
+    await this.notificationsService.sendPushNotification({
+      tokens: receiver.fcmTokens ?? [],
+      title: sender.fullName,
+      body: createDirectMessageDto.content,
+      data: this.toPushData({
+        id: createdMessage.id,
+        messageType: 'direct',
+        senderId,
+        senderName: sender.fullName,
+        receiverUserId: receiverId,
+        receiverName: receiver.fullName,
+        content: createDirectMessageDto.content,
+        threadId: `d-${senderId}`,
+        createdAt: createdAt.toISOString(),
+      }),
+    });
+
+    return response;
   }
 
   async createGroupMessage(createGroupMessageDto: CreateGroupMessageDto) {
@@ -84,14 +130,58 @@ export class MessagesService {
       authTag: encrypted.authTag,
     });
 
-    return {
+    const createdAt: Date = (createdMessage as any).createdAt ?? new Date();
+    const senderId = sender.id;
+    const groupId = group.id;
+    const memberIds = group.memberIds.map((memberId) => memberId.toString());
+
+    const response = {
       id: createdMessage.id,
       messageType: createdMessage.messageType,
       senderId: createdMessage.senderId,
       groupId: createdMessage.groupId,
       content: createGroupMessageDto.content,
-      createdAt: createdMessage.createdAt,
+      createdAt,
     };
+
+    const realtimePayload: RealtimeChatMessageEvent = {
+      id: createdMessage.id,
+      messageType: 'group',
+      senderId,
+      senderName: sender.fullName,
+      groupId,
+      groupName: group.name,
+      content: createGroupMessageDto.content,
+      createdAt,
+    };
+
+    this.messagesGateway.broadcastMessageToUsers(memberIds, realtimePayload);
+
+    const recipientIds = memberIds.filter((memberId) => memberId !== senderId);
+    const recipientUsers = await this.userModel
+      .find({ _id: { $in: recipientIds.map((id) => new Types.ObjectId(id)) } })
+      .select({ fcmTokens: 1 });
+
+    const recipientTokens = recipientUsers.flatMap((user) => user.fcmTokens ?? []);
+
+    await this.notificationsService.sendPushNotification({
+      tokens: recipientTokens,
+      title: `${sender.fullName} - ${group.name}`,
+      body: createGroupMessageDto.content,
+      data: this.toPushData({
+        id: createdMessage.id,
+        messageType: 'group',
+        senderId,
+        senderName: sender.fullName,
+        groupId,
+        groupName: group.name,
+        content: createGroupMessageDto.content,
+        threadId: `g-${groupId}`,
+        createdAt: createdAt.toISOString(),
+      }),
+    });
+
+    return response;
   }
 
   async getDirectConversation(userAId: string, userBId: string) {
@@ -99,8 +189,14 @@ export class MessagesService {
       .find({
         messageType: 'direct',
         $or: [
-          { senderId: new Types.ObjectId(userAId), receiverUserId: new Types.ObjectId(userBId) },
-          { senderId: new Types.ObjectId(userBId), receiverUserId: new Types.ObjectId(userAId) },
+          {
+            senderId: new Types.ObjectId(userAId),
+            receiverUserId: new Types.ObjectId(userBId),
+          },
+          {
+            senderId: new Types.ObjectId(userBId),
+            receiverUserId: new Types.ObjectId(userAId),
+          },
         ],
       })
       .sort({ createdAt: 1 });
@@ -115,7 +211,7 @@ export class MessagesService {
         iv: message.iv,
         authTag: message.authTag,
       }),
-      createdAt: message.createdAt,
+      createdAt: (message as any).createdAt,
     }));
   }
 
@@ -143,7 +239,16 @@ export class MessagesService {
         iv: message.iv,
         authTag: message.authTag,
       }),
-      createdAt: message.createdAt,
+      createdAt: (message as any).createdAt,
     }));
   }
+
+  private toPushData(values: Record<string, string | undefined>): Record<string, string> {
+    const entries = Object.entries(values)
+      .filter((entry) => entry[1] != null && entry[1]!.trim().length > 0)
+      .map((entry) => [entry[0], entry[1]!.trim()] as const);
+
+    return Object.fromEntries(entries);
+  }
 }
+

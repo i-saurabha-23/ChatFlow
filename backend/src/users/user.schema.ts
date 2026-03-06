@@ -31,6 +31,9 @@ export class User {
 
   @Prop()
   phoneAuthTag?: string;
+
+  @Prop({ type: [String], default: [] })
+  fcmTokens!: string[];
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

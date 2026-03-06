@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { CreateUserDto } from './create-user.dto';
+import { UpdateFcmTokenDto } from './update-fcm-token.dto';
 import { UsersService } from './users.service';
 
 @Controller('users')
@@ -19,5 +20,13 @@ export class UsersController {
   @Get(':id')
   async findById(@Param('id') id: string) {
     return this.usersService.findById(id);
+  }
+
+  @Post(':id/fcm-token')
+  async saveFcmToken(
+    @Param('id') id: string,
+    @Body() updateFcmTokenDto: UpdateFcmTokenDto,
+  ) {
+    return this.usersService.saveFcmToken(id, updateFcmTokenDto.token);
   }
 }

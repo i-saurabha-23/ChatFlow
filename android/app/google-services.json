@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "99520678753",
+    "project_id": "projects-c315e",
+    "storage_bucket": "projects-c315e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:99520678753:android:b8d5685f089db90593d320",
+        "android_client_info": {
+          "package_name": "com.example.interview"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA0nNS7s3Wy5QL10mlPOIFeCHPzgdW9OhU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:99520678753:android:34700f38f6e7c97993d320",
+        "android_client_info": {
+          "package_name": "com.triroop.retailSync.retail_sync"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA0nNS7s3Wy5QL10mlPOIFeCHPzgdW9OhU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

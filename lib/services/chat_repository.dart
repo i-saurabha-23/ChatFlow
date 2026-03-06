@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -9,7 +10,9 @@ import 'package:interview/models/chat_message.dart';
 import 'package:interview/models/chat_thread.dart';
 import 'package:interview/models/contact_model.dart';
 import 'package:interview/services/auth_service.dart';
+import 'package:interview/services/push_notification_service.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:socket_io_client/socket_io_client.dart' as io;
 
 class ChatRepository {
   ChatRepository._();
@@ -24,6 +27,10 @@ class ChatRepository {
   List<ContactModel> _contacts = const [];
   String? _currentUserId;
   bool _initialized = false;
+
+  io.Socket? _socket;
+  String? _socketUserId;
+  String? _registeredFcmToken;
 
   String get currentUserId {
     if (_currentUserId == null || _currentUserId!.isEmpty) {
@@ -48,6 +55,9 @@ class ChatRepository {
       throw Exception('Missing current user id in session response.');
     }
 
+    _ensureRealtimeConnection();
+    await _registerDeviceTokenIfAvailable();
+
     final backendUsers = await _fetchBackendUsers();
     _contacts = await _filterSavedChatFlowContacts(backendUsers);
     final groups = await _fetchGroupsForCurrentUser();
@@ -56,7 +66,10 @@ class ChatRepository {
 
     for (final contact in _contacts) {
       final threadId = _directThreadId(contact.id);
-      final directMessages = await _fetchDirectConversation(contact.id, threadId);
+      final directMessages = await _fetchDirectConversation(
+        contact.id,
+        threadId,
+      );
       final lastMessage = directMessages.isNotEmpty
           ? directMessages.last.content
           : 'Start chatting';
@@ -91,7 +104,7 @@ class ChatRepository {
       final updatedAt = groupMessages.isNotEmpty
           ? groupMessages.last.sentAt
           : DateTime.tryParse(group['createdAt']?.toString() ?? '') ??
-              DateTime.now();
+                DateTime.now();
 
       threads.add(
         ChatThread(
@@ -130,6 +143,36 @@ class ChatRepository {
       threadId,
       () => ValueNotifier<List<ChatMessage>>([]),
     );
+  }
+
+  Future<ChatThread?> resolveThreadFromNotificationData(
+    Map<String, dynamic> data,
+  ) async {
+    await initialize();
+
+    final threadId = _threadIdFromPayload(data);
+    if (threadId == null || threadId.isEmpty) {
+      return null;
+    }
+
+    final existing = _threadById(threadId);
+    if (existing != null) {
+      return existing;
+    }
+
+    await refreshAll();
+    final afterRefresh = _threadById(threadId);
+    if (afterRefresh != null) {
+      return afterRefresh;
+    }
+
+    final placeholder = _buildThreadFromPayload(threadId, data);
+    if (placeholder != null) {
+      _upsertThread(placeholder);
+      return placeholder;
+    }
+
+    return null;
   }
 
   Future<ChatThread> createOrOpenDirectThread(ContactModel contact) async {
@@ -188,7 +231,9 @@ class ChatRepository {
     );
 
     if (response.statusCode != 201) {
-      throw Exception(_extractErrorMessage(response, 'Failed to create group.'));
+      throw Exception(
+        _extractErrorMessage(response, 'Failed to create group.'),
+      );
     }
 
     final decoded = jsonDecode(response.body) as Map<String, dynamic>;
@@ -205,7 +250,8 @@ class ChatRepository {
       memberIds: memberIds,
       groupId: groupId,
       lastMessage: 'Group created',
-      updatedAt: DateTime.tryParse(decoded['createdAt']?.toString() ?? '') ??
+      updatedAt:
+          DateTime.tryParse(decoded['createdAt']?.toString() ?? '') ??
           DateTime.now(),
     );
 
@@ -275,14 +321,15 @@ class ChatRepository {
     );
 
     if (response.statusCode != 201) {
-      throw Exception(_extractErrorMessage(response, 'Failed to send message.'));
+      throw Exception(
+        _extractErrorMessage(response, 'Failed to send message.'),
+      );
     }
 
     final decoded = jsonDecode(response.body) as Map<String, dynamic>;
     final message = ChatMessage.fromJson(decoded, threadId: threadId);
 
-    final notifier = messagesForThread(threadId);
-    notifier.value = [...notifier.value, message];
+    _appendMessageIfMissing(threadId, message);
 
     final updatedThread = thread.copyWith(
       lastMessage: message.content,
@@ -299,7 +346,9 @@ class ChatRepository {
     );
 
     if (response.statusCode != 200) {
-      throw Exception(_extractErrorMessage(response, 'Failed to load contacts.'));
+      throw Exception(
+        _extractErrorMessage(response, 'Failed to load contacts.'),
+      );
     }
 
     final decoded = jsonDecode(response.body) as List<dynamic>;
@@ -499,10 +548,242 @@ class ChatRepository {
     threadsNotifier.value = updated;
   }
 
+  Future<void> _registerDeviceTokenIfAvailable() async {
+    if (kIsWeb || _currentUserId == null) {
+      return;
+    }
+
+    try {
+      final token = await PushNotificationService.instance.getDeviceToken();
+      if (token == null || token.isEmpty || token == _registeredFcmToken) {
+        return;
+      }
+
+      final headers = await _authService.authorizedJsonHeaders();
+      final response = await http.post(
+        Uri.parse(AppEndpoints.userFcmToken(_currentUserId!)),
+        headers: headers,
+        body: jsonEncode({'token': token}),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        _registeredFcmToken = token;
+      }
+    } catch (_) {
+      // Ignore token sync failures to keep chat UX uninterrupted.
+    }
+  }
+
+  void _ensureRealtimeConnection() {
+    final userId = _currentUserId;
+    if (userId == null || userId.isEmpty) {
+      return;
+    }
+
+    if (_socket != null && _socketUserId == userId) {
+      if (!(_socket!.connected)) {
+        _socket!.connect();
+      }
+      return;
+    }
+
+    _disconnectRealtime();
+
+    final socket = io.io(AppEndpoints.socketBaseUrl, <String, dynamic>{
+      'transports': ['websocket'],
+      'autoConnect': true,
+      'query': {'userId': userId},
+    });
+
+    socket.onConnect((_) {
+      socket.emit('chat:register', {'userId': userId});
+    });
+
+    socket.on('chat:message', (payload) {
+      unawaited(_handleRealtimePayload(payload));
+    });
+
+    _socket = socket;
+    _socketUserId = userId;
+  }
+
+  Future<void> _handleRealtimePayload(dynamic payload) async {
+    if (_currentUserId == null || payload is! Map) {
+      return;
+    }
+
+    final data = Map<String, dynamic>.from(payload);
+    final threadId = _threadIdFromPayload(data);
+    if (threadId == null || threadId.isEmpty) {
+      return;
+    }
+
+    final messageId = data['id']?.toString();
+    if (messageId == null || messageId.isEmpty) {
+      return;
+    }
+
+    final message = ChatMessage.fromJson(data, threadId: threadId);
+    _appendMessageIfMissing(threadId, message);
+
+    final existingThread = _threadById(threadId);
+    if (existingThread != null) {
+      _upsertThread(
+        existingThread.copyWith(
+          lastMessage: message.content,
+          updatedAt: message.sentAt,
+        ),
+      );
+      return;
+    }
+
+    final placeholder = _buildThreadFromPayload(threadId, data);
+    if (placeholder != null) {
+      _upsertThread(
+        placeholder.copyWith(
+          lastMessage: message.content,
+          updatedAt: message.sentAt,
+        ),
+      );
+    }
+  }
+
+  ChatThread? _buildThreadFromPayload(
+    String threadId,
+    Map<String, dynamic> data,
+  ) {
+    final messageType = data['messageType']?.toString();
+    final createdAt =
+        DateTime.tryParse(data['createdAt']?.toString() ?? '') ??
+        DateTime.now();
+
+    if (messageType == 'group') {
+      final groupId = data['groupId']?.toString();
+      if (groupId == null || groupId.isEmpty) {
+        return null;
+      }
+
+      final groupName = data['groupName']?.toString() ?? 'Group chat';
+      return ChatThread(
+        id: threadId,
+        title: groupName,
+        subtitle: 'Group chat',
+        isGroup: true,
+        memberIds: const [],
+        groupId: groupId,
+        lastMessage: data['content']?.toString() ?? 'New message',
+        updatedAt: createdAt,
+      );
+    }
+
+    final senderId = data['senderId']?.toString();
+    final receiverId = data['receiverUserId']?.toString();
+
+    if (senderId == null || senderId.isEmpty) {
+      return null;
+    }
+
+    final effectiveCurrentUserId = _currentUserId;
+    if (effectiveCurrentUserId == null || effectiveCurrentUserId.isEmpty) {
+      return null;
+    }
+
+    final contactId = senderId == effectiveCurrentUserId
+        ? receiverId
+        : senderId;
+    if (contactId == null || contactId.isEmpty) {
+      return null;
+    }
+
+    final title = senderId == effectiveCurrentUserId
+        ? data['receiverName']?.toString()
+        : data['senderName']?.toString();
+
+    final memberIds = [
+      senderId,
+      receiverId,
+    ].whereType<String>().where((id) => id.isNotEmpty).toList();
+
+    return ChatThread(
+      id: threadId,
+      title: (title == null || title.isEmpty) ? 'Direct chat' : title,
+      subtitle: 'Tap to view profile',
+      isGroup: false,
+      memberIds: memberIds,
+      directContactId: contactId,
+      lastMessage: data['content']?.toString() ?? 'New message',
+      updatedAt: createdAt,
+    );
+  }
+
+  String? _threadIdFromPayload(Map<String, dynamic> data) {
+    final explicitThreadId = data['threadId']?.toString();
+    if (explicitThreadId != null && explicitThreadId.isNotEmpty) {
+      return explicitThreadId;
+    }
+
+    final messageType = data['messageType']?.toString();
+    if (messageType == 'group') {
+      final groupId = data['groupId']?.toString();
+      if (groupId == null || groupId.isEmpty) {
+        return null;
+      }
+      return _groupThreadId(groupId);
+    }
+
+    final senderId = data['senderId']?.toString();
+    final receiverId = data['receiverUserId']?.toString();
+    if (senderId == null || senderId.isEmpty) {
+      return null;
+    }
+
+    final effectiveCurrentUserId = _currentUserId;
+    if (effectiveCurrentUserId == null || effectiveCurrentUserId.isEmpty) {
+      return null;
+    }
+
+    final contactId = senderId == effectiveCurrentUserId
+        ? receiverId
+        : senderId;
+    if (contactId == null || contactId.isEmpty) {
+      return null;
+    }
+
+    return _directThreadId(contactId);
+  }
+
+  ChatThread? _threadById(String threadId) {
+    for (final thread in threadsNotifier.value) {
+      if (thread.id == threadId) {
+        return thread;
+      }
+    }
+    return null;
+  }
+
+  void _appendMessageIfMissing(String threadId, ChatMessage message) {
+    final notifier = messagesForThread(threadId);
+    final alreadyExists = notifier.value.any((item) => item.id == message.id);
+    if (alreadyExists) {
+      return;
+    }
+
+    notifier.value = [...notifier.value, message];
+  }
+
+  void _disconnectRealtime() {
+    _socket?.dispose();
+    _socket?.disconnect();
+    _socket = null;
+    _socketUserId = null;
+  }
+
   void clearLocalCache() {
     _initialized = false;
     _currentUserId = null;
     _contacts = const [];
+    _registeredFcmToken = null;
+    _disconnectRealtime();
     threadsNotifier.value = [];
     for (final notifier in _messagesNotifiers.values) {
       notifier.value = [];

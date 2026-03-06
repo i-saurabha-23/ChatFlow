@@ -134,6 +134,29 @@ export class UsersService {
     return users.map((user) => this.toSafeUser(user));
   }
 
+  async saveFcmToken(userId: string, token: string) {
+    if (!isValidObjectId(userId)) {
+      throw new BadRequestException('Invalid user id.');
+    }
+
+    const normalizedToken = token.trim();
+    if (!normalizedToken) {
+      throw new BadRequestException('FCM token is required.');
+    }
+
+    const updatedUser = await this.userModel.findByIdAndUpdate(
+      userId,
+      { $addToSet: { fcmTokens: normalizedToken } },
+      { new: true },
+    );
+
+    if (!updatedUser) {
+      throw new NotFoundException('User not found.');
+    }
+
+    return { success: true };
+  }
+
   private toSafeUser(user: UserDocument) {
     return {
       id: user.id,

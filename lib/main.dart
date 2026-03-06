@@ -1,4 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:interview/firebase_options.dart';
+import 'package:interview/services/push_notification_service.dart';
 import 'package:interview/views/auth/sign_in_screen.dart';
 import 'package:interview/views/auth/sign_up_screen.dart';
 import 'package:interview/views/chat/main_chats_screen.dart';
@@ -6,8 +11,26 @@ import 'package:interview/views/splash/splash_screen_one.dart';
 import 'package:interview/views/splash/splash_screen_three.dart';
 import 'package:interview/views/splash/splash_screen_two.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  final supportsFirebase =
+      !kIsWeb &&
+      !const {
+        TargetPlatform.iOS,
+        TargetPlatform.macOS,
+        TargetPlatform.windows,
+        TargetPlatform.linux,
+      }.contains(defaultTargetPlatform);
+
+  if (supportsFirebase) {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    await PushNotificationService.instance.initialize();
+  }
+
   runApp(const MyApp());
 }
 

@@ -3,6 +3,15 @@ class AppEndpoints {
 
   // Use 10.0.2.2 for Android emulator to reach local machine.
   static const String baseUrl = 'https://fsh60pfq-3000.inc1.devtunnels.ms/api';
+  static String get socketBaseUrl {
+    if (baseUrl.endsWith('/api')) {
+      return baseUrl.substring(0, baseUrl.length - 4);
+    }
+    if (baseUrl.endsWith('/api/')) {
+      return baseUrl.substring(0, baseUrl.length - 5);
+    }
+    return baseUrl;
+  }
 
   static const String register = '$baseUrl/auth/register';
   static const String login = '$baseUrl/auth/login';
@@ -12,6 +21,7 @@ class AppEndpoints {
   static const String groups = '$baseUrl/groups';
   static const String directMessages = '$baseUrl/messages/direct';
   static const String groupMessages = '$baseUrl/messages/group';
+  static String userFcmToken(String userId) => '$users/$userId/fcm-token';
 
   static const String googleWebClientId = String.fromEnvironment(
     'GOOGLE_WEB_CLIENT_ID',

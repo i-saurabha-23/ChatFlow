@@ -23,6 +23,7 @@ cp .env.example .env
 - `MONGODB_URI`: Your MongoDB URL
 - `MESSAGE_ENCRYPTION_KEY`: 64 character hex key (32 bytes)
 - `GOOGLE_CLIENT_IDS`: Comma-separated Google OAuth client IDs that can sign in
+- `FIREBASE_SERVICE_ACCOUNT_PATH`: Path to Firebase service account file (for FCM), e.g. `serviceAccountKey.json`
 
 4. Run in development:
 
@@ -38,6 +39,7 @@ Mongo database name is fixed as: `chatflow`
 
 - `POST /api/users`
 - `GET /api/users/:id`
+- `POST /api/users/:id/fcm-token`
 - `POST /api/auth/register`
 - `POST /api/auth/login`
 - `POST /api/auth/google`
@@ -48,6 +50,10 @@ Mongo database name is fixed as: `chatflow`
 - `POST /api/messages/group`
 - `GET /api/messages/direct/:userAId/:userBId`
 - `GET /api/messages/group/:groupId`
+
+WebSocket:
+- Connect to server root (`ws://<host>:<port>`) and emit `chat:register` with `{ userId }`
+- Listen for `chat:message` for real-time direct/group message events
 
 ## Security
 

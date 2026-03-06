@@ -7,6 +7,7 @@ import 'package:interview/models/contact_model.dart';
 import 'package:interview/services/app_permissions_service.dart';
 import 'package:interview/services/auth_service.dart';
 import 'package:interview/services/chat_repository.dart';
+import 'package:interview/services/push_notification_service.dart';
 import 'package:interview/views/auth/sign_in_screen.dart';
 import 'package:interview/views/chat/chat_thread_screen.dart';
 import 'package:interview/views/chat/group_details_screen.dart';
@@ -28,12 +29,14 @@ class _MainChatsScreenState extends State<MainChatsScreen> {
   final AppPermissionsService _permissionsService = AppPermissionsService();
 
   final TextEditingController _chatSearchController = TextEditingController();
-  final TextEditingController _contactsSearchController = TextEditingController();
+  final TextEditingController _contactsSearchController =
+      TextEditingController();
 
   int _currentTabIndex = 0;
   bool _isLoadingChats = true;
   bool _isLoadingContacts = true;
   bool _isOpeningChat = false;
+  bool _isHandlingNotificationTap = false;
   bool _isGroupMode = false;
 
   String? _chatLoadError;
@@ -50,20 +53,81 @@ class _MainChatsScreenState extends State<MainChatsScreen> {
   void initState() {
     super.initState();
     _profileFuture = _authService.getCurrentUser();
+    PushNotificationService.instance.setNotificationTapHandler(
+      _handleNotificationTap,
+    );
     _bootstrapData();
   }
 
   @override
   void dispose() {
+    PushNotificationService.instance.clearNotificationTapHandler();
     _chatSearchController.dispose();
     _contactsSearchController.dispose();
     super.dispose();
   }
 
   Future<void> _bootstrapData() async {
+    await _requestNotificationPermission();
     await _requestCorePermissions(showFeedback: false);
     await _loadChats();
     await _loadContacts();
+    await PushNotificationService.instance.consumePendingTap();
+  }
+
+  Future<void> _requestNotificationPermission() async {
+    final status = await Permission.notification.status;
+    if (status.isGranted) {
+      return;
+    }
+
+    final requested = await Permission.notification.request();
+    if (!mounted) {
+      return;
+    }
+
+    if (requested.isGranted) {
+      CherryToast.success(
+        title: const Text('Notifications Enabled'),
+        description: const Text('You will receive chat alerts in background.'),
+      ).show(context);
+      return;
+    }
+
+    CherryToast.info(
+      title: const Text('Enable Notifications'),
+      description: const Text(
+        'Allow notifications to receive chat messages when app is closed.',
+      ),
+    ).show(context);
+
+    if (requested.isPermanentlyDenied) {
+      await openAppSettings();
+    }
+  }
+
+  Future<void> _handleNotificationTap(Map<String, dynamic> payload) async {
+    if (!mounted || _isHandlingNotificationTap) {
+      return;
+    }
+
+    _isHandlingNotificationTap = true;
+    try {
+      final thread = await _repository.resolveThreadFromNotificationData(
+        payload,
+      );
+      if (!mounted || thread == null) {
+        return;
+      }
+
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => ChatThreadScreen(thread: thread)),
+      );
+      await _loadChats();
+    } finally {
+      _isHandlingNotificationTap = false;
+    }
   }
 
   Future<void> _requestCorePermissions({required bool showFeedback}) async {
@@ -75,8 +139,9 @@ class _MainChatsScreenState extends State<MainChatsScreen> {
 
     setState(() {
       _permissionStatuses = statuses;
-      _contactsPermissionGranted =
-          _permissionsService.isContactsGranted(_permissionStatuses);
+      _contactsPermissionGranted = _permissionsService.isContactsGranted(
+        _permissionStatuses,
+      );
     });
 
     if (!showFeedback) {
@@ -284,65 +349,68 @@ class _MainChatsScreenState extends State<MainChatsScreen> {
           child: _isLoadingChats
               ? const Center(child: CircularProgressIndicator())
               : _chatLoadError != null
-                  ? Center(
-                      child: Text(
-                        _chatLoadError!,
-                        textAlign: TextAlign.center,
-                        style: AppSizes.textStyle,
-                      ),
-                    )
-                  : ValueListenableBuilder<List<ChatThread>>(
-                      valueListenable: _repository.threadsNotifier,
-                      builder: (context, threads, _) {
-                        final filtered = _filterThreads(threads);
+              ? Center(
+                  child: Text(
+                    _chatLoadError!,
+                    textAlign: TextAlign.center,
+                    style: AppSizes.textStyle,
+                  ),
+                )
+              : ValueListenableBuilder<List<ChatThread>>(
+                  valueListenable: _repository.threadsNotifier,
+                  builder: (context, threads, _) {
+                    final filtered = _filterThreads(threads);
 
-                        if (filtered.isEmpty) {
-                          return const Center(
-                            child: Text(
-                              'No chats yet.\nOpen Contacts tab to start.',
-                              textAlign: TextAlign.center,
-                              style: AppSizes.textStyle,
-                            ),
-                          );
-                        }
+                    if (filtered.isEmpty) {
+                      return const Center(
+                        child: Text(
+                          'No chats yet.\nOpen Contacts tab to start.',
+                          textAlign: TextAlign.center,
+                          style: AppSizes.textStyle,
+                        ),
+                      );
+                    }
 
-                        return ListView.builder(
-                          itemCount: filtered.length,
-                          itemBuilder: (context, index) {
-                            final thread = filtered[index];
-                            return Card(
-                              color: Colors.white,
-                              child: ListTile(
-                                onTap: () async {
-                                  await Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => ChatThreadScreen(thread: thread),
-                                    ),
-                                  );
-                                  await _loadChats();
-                                },
-                                leading: CircleAvatar(
-                                  backgroundColor: AppColors.primaryColor,
-                                  child: Icon(
-                                    thread.isGroup
-                                        ? Icons.groups_rounded
-                                        : Icons.person,
-                                    color: Colors.white,
-                                  ),
+                    return ListView.builder(
+                      itemCount: filtered.length,
+                      itemBuilder: (context, index) {
+                        final thread = filtered[index];
+                        return Card(
+                          color: Colors.white,
+                          child: ListTile(
+                            onTap: () async {
+                              await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      ChatThreadScreen(thread: thread),
                                 ),
-                                title: Text(thread.title),
-                                subtitle: Text(thread.lastMessage),
-                                trailing: Text(
-                                  '${thread.updatedAt.hour.toString().padLeft(2, '0')}:${thread.updatedAt.minute.toString().padLeft(2, '0')}',
-                                  style: AppSizes.paragraphStyle.copyWith(fontSize: 12),
-                                ),
+                              );
+                              await _loadChats();
+                            },
+                            leading: CircleAvatar(
+                              backgroundColor: AppColors.primaryColor,
+                              child: Icon(
+                                thread.isGroup
+                                    ? Icons.groups_rounded
+                                    : Icons.person,
+                                color: Colors.white,
                               ),
-                            );
-                          },
+                            ),
+                            title: Text(thread.title),
+                            subtitle: Text(thread.lastMessage),
+                            trailing: Text(
+                              '${thread.updatedAt.hour.toString().padLeft(2, '0')}:${thread.updatedAt.minute.toString().padLeft(2, '0')}',
+                              style: AppSizes.paragraphStyle.copyWith(
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
                         );
                       },
-                    ),
+                    );
+                  },
+                ),
         ),
       ],
     );
@@ -372,60 +440,58 @@ class _MainChatsScreenState extends State<MainChatsScreen> {
           child: _isLoadingContacts
               ? const Center(child: CircularProgressIndicator())
               : _contactsLoadError != null
-                  ? Center(
-                      child: Text(
-                        _contactsLoadError!,
-                        textAlign: TextAlign.center,
-                      ),
-                    )
-                  : contacts.isEmpty
-                      ? Center(
-                          child: Text(
-                            _contactsPermissionGranted
-                                ? 'No ChatFlow users found in your saved phone contacts.'
-                                : 'Contacts permission is required to discover saved ChatFlow users.',
-                            textAlign: TextAlign.center,
-                          ),
-                        )
-                      : ListView.builder(
-                          itemCount: contacts.length,
-                          itemBuilder: (context, index) {
-                            final contact = contacts[index];
-                            final isSelected = _selectedContactIds.contains(contact.id);
+              ? Center(
+                  child: Text(_contactsLoadError!, textAlign: TextAlign.center),
+                )
+              : contacts.isEmpty
+              ? Center(
+                  child: Text(
+                    _contactsPermissionGranted
+                        ? 'No ChatFlow users found in your saved phone contacts.'
+                        : 'Contacts permission is required to discover saved ChatFlow users.',
+                    textAlign: TextAlign.center,
+                  ),
+                )
+              : ListView.builder(
+                  itemCount: contacts.length,
+                  itemBuilder: (context, index) {
+                    final contact = contacts[index];
+                    final isSelected = _selectedContactIds.contains(contact.id);
 
-                            return Card(
-                              color: Colors.white,
-                              child: ListTile(
-                                onTap: () => _onContactTap(contact),
-                                leading: CircleAvatar(
-                                  backgroundColor: AppColors.primaryColor,
-                                  child: Text(
-                                    contact.fullName.substring(0, 1).toUpperCase(),
-                                    style: const TextStyle(color: Colors.white),
-                                  ),
-                                ),
-                                title: Text(contact.fullName),
-                                subtitle: Text(
-                                  [
-                                    contact.phoneNumber,
-                                    if (contact.email != null && contact.email!.isNotEmpty)
-                                      contact.email!,
-                                  ].join(' - '),
-                                ),
-                                trailing: _isGroupMode
-                                    ? Icon(
-                                        isSelected
-                                            ? Icons.check_circle
-                                            : Icons.circle_outlined,
-                                        color: isSelected
-                                            ? AppColors.primaryColor
-                                            : AppColors.textSecondaryColor,
-                                      )
-                                    : null,
-                              ),
-                            );
-                          },
+                    return Card(
+                      color: Colors.white,
+                      child: ListTile(
+                        onTap: () => _onContactTap(contact),
+                        leading: CircleAvatar(
+                          backgroundColor: AppColors.primaryColor,
+                          child: Text(
+                            contact.fullName.substring(0, 1).toUpperCase(),
+                            style: const TextStyle(color: Colors.white),
+                          ),
                         ),
+                        title: Text(contact.fullName),
+                        subtitle: Text(
+                          [
+                            contact.phoneNumber,
+                            if (contact.email != null &&
+                                contact.email!.isNotEmpty)
+                              contact.email!,
+                          ].join(' - '),
+                        ),
+                        trailing: _isGroupMode
+                            ? Icon(
+                                isSelected
+                                    ? Icons.check_circle
+                                    : Icons.circle_outlined,
+                                color: isSelected
+                                    ? AppColors.primaryColor
+                                    : AppColors.textSecondaryColor,
+                              )
+                            : null,
+                      ),
+                    );
+                  },
+                ),
         ),
         if (_isGroupMode)
           Padding(
@@ -463,6 +529,15 @@ class _MainChatsScreenState extends State<MainChatsScreen> {
               await _requestCorePermissions(showFeedback: true);
               await _loadContacts();
             },
+          ),
+        ),
+        Card(
+          color: Colors.white,
+          child: ListTile(
+            leading: const Icon(Icons.notifications_active_outlined),
+            title: const Text('Notifications'),
+            subtitle: const Text('Allow alerts for incoming chat messages'),
+            onTap: _requestNotificationPermission,
           ),
         ),
         Card(
@@ -576,7 +651,10 @@ class _MainChatsScreenState extends State<MainChatsScreen> {
                       backgroundColor: Colors.white.withValues(alpha: 0.22),
                       child: Text(
                         (user['fullName']?.toString().isNotEmpty ?? false)
-                            ? user['fullName'].toString().substring(0, 1).toUpperCase()
+                            ? user['fullName']
+                                  .toString()
+                                  .substring(0, 1)
+                                  .toUpperCase()
                             : '?',
                         style: const TextStyle(
                           color: Colors.white,
@@ -598,9 +676,18 @@ class _MainChatsScreenState extends State<MainChatsScreen> {
                 ),
               ),
               const SizedBox(height: 14),
-              _profileTile('User ID', user['id']?.toString() ?? 'Not available'),
-              _profileTile('Full Name', user['fullName']?.toString() ?? 'Not available'),
-              _profileTile('Email', user['email']?.toString() ?? 'Not available'),
+              _profileTile(
+                'User ID',
+                user['id']?.toString() ?? 'Not available',
+              ),
+              _profileTile(
+                'Full Name',
+                user['fullName']?.toString() ?? 'Not available',
+              ),
+              _profileTile(
+                'Email',
+                user['email']?.toString() ?? 'Not available',
+              ),
               _profileTile(
                 'Phone Number',
                 (phoneNumber == null || phoneNumber.isEmpty)
@@ -719,10 +806,7 @@ class _MainChatsScreenState extends State<MainChatsScreen> {
               },
             )
           : null,
-      body: Padding(
-        padding: AppSizes.screenPadding,
-        child: _tabBody(),
-      ),
+      body: Padding(padding: AppSizes.screenPadding, child: _tabBody()),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentTabIndex,
         backgroundColor: Colors.white,
@@ -730,7 +814,9 @@ class _MainChatsScreenState extends State<MainChatsScreen> {
         onDestinationSelected: (index) {
           setState(() => _currentTabIndex = index);
           if (index == 1) {
-            _requestCorePermissions(showFeedback: false).then((_) => _loadContacts());
+            _requestCorePermissions(
+              showFeedback: false,
+            ).then((_) => _loadContacts());
           }
           if (index == 3) {
             _refreshProfile();
